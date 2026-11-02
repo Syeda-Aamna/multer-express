@@ -54,26 +54,42 @@ export default function Page() {
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [dragActive, setDragActive] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
   const [selected, setSelected] = useState<number[]>([])
 
   const filteredFiles = useMemo(() => files.filter((file) => file.name.toLowerCase().includes(query.toLowerCase())), [files, query])
   const selectedCount = selected.length
 
-  function handleFiles(fileList: FileList | null) {
+  async function handleFiles(fileList: FileList | null) {
     if (!fileList?.length) return
     setUploading(true)
-    window.setTimeout(() => {
-      const additions = Array.from(fileList).map((file, index) => ({
+    setUploadError('')
+
+    const formData = new FormData()
+    Array.from(fileList).forEach((file) => formData.append('files', file))
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_UPLOAD_API_URL || 'http://localhost:4000'}/api/upload`, {
+        method: 'POST',
+        body: formData,
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.message || 'Upload failed')
+
+      const additions = (result.files || []).map((file: { originalname: string; size: number; mimetype: string }, index: number) => ({
         id: Date.now() + index,
-        name: file.name,
-        type: file.type.startsWith('image/') ? 'image' as const : file.name.endsWith('.zip') ? 'archive' as const : 'document' as const,
+        name: file.originalname,
+        type: file.mimetype.startsWith('image/') ? 'image' as const : file.originalname.endsWith('.zip') ? 'archive' as const : 'document' as const,
         size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`,
         updated: 'Just now',
-        color: file.type.startsWith('image/') ? 'bg-sky-50 text-sky-500' : 'bg-blue-50 text-blue-500',
+        color: file.mimetype.startsWith('image/') ? 'bg-sky-50 text-sky-500' : 'bg-blue-50 text-blue-500',
       }))
       setFiles((current) => [...additions, ...current])
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Upload failed')
+    } finally {
       setUploading(false)
-    }, 700)
+    }
   }
 
   function deleteSelected() {
@@ -113,7 +129,8 @@ export default function Page() {
           <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8">
             <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><p className="mb-2 text-sm font-medium text-slate-400">Tuesday, March 19, 2024</p><h1 className="text-3xl font-semibold tracking-tight">Good morning, Aamna</h1><p className="mt-2 text-sm text-slate-500">Manage your files and keep your workspace organized.</p></div><Button onClick={() => inputRef.current?.click()} className="h-11 rounded-xl bg-slate-950 px-5 hover:bg-slate-800"><UploadCloud data-icon="inline-start" /> Upload files</Button></div>
 
-            <div onClick={() => inputRef.current?.click()} onDragOver={(event) => { event.preventDefault(); setDragActive(true) }} onDragLeave={() => setDragActive(false)} onDrop={(event) => { event.preventDefault(); setDragActive(false); handleFiles(event.dataTransfer.files) }} className={`mb-8 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed transition-colors ${dragActive ? 'border-slate-900 bg-slate-100' : 'border-slate-300 bg-white hover:border-slate-400'}`}><div className="mb-3 flex size-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700"><CloudUpload className="size-5" /></div><p className="text-sm font-semibold">{uploading ? 'Uploading files...' : 'Drop files here to upload'}</p><p className="mt-1 text-xs text-slate-400">or click to browse from your computer · Max file size 50 MB</p><input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => handleFiles(event.target.files)} /></div>
+            <div onClick={() => inputRef.current?.click()} onDragOver={(event) => { event.preventDefault(); setDragActive(true) }} onDragLeave={() => setDragActive(false)} onDrop={(event) => { event.preventDefault(); setDragActive(false); handleFiles(event.dataTransfer.files) }} className={`mb-2 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed transition-colors ${dragActive ? 'border-slate-900 bg-slate-100' : 'border-slate-300 bg-white hover:border-slate-400'}`}><div className="mb-3 flex size-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700"><CloudUpload className="size-5" /></div><p className="text-sm font-semibold">{uploading ? 'Uploading files...' : 'Drop files here to upload'}</p><p className="mt-1 text-xs text-slate-400">or click to browse from your computer · Max file size 50 MB</p><input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => handleFiles(event.target.files)} /></div>
+            {uploadError && <p role="alert" className="mb-8 text-sm text-rose-600">{uploadError}</p>}
 
             <div className="mb-5 grid gap-4 sm:grid-cols-3"><div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="mb-5 flex items-center justify-between"><span className="text-sm text-slate-500">Total files</span><File className="size-4 text-slate-400" /></div><p className="text-2xl font-semibold">{files.length + 19}</p><p className="mt-1 text-xs text-emerald-600">+12% this month</p></div><div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="mb-5 flex items-center justify-between"><span className="text-sm text-slate-500">Storage used</span><HardDrive className="size-4 text-slate-400" /></div><p className="text-2xl font-semibold">2.8 <span className="text-sm font-normal text-slate-400">GB</span></p><p className="mt-1 text-xs text-slate-400">of 10 GB available</p></div><div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="mb-5 flex items-center justify-between"><span className="text-sm text-slate-500">Shared with me</span><ShieldCheck className="size-4 text-slate-400" /></div><p className="text-2xl font-semibold">8</p><p className="mt-1 text-xs text-slate-400">Across 4 workspaces</p></div></div>
 
